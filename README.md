@@ -9,7 +9,7 @@
 
 ---
 
-## What I Created
+## Intro
 
 VitalsLink is an end-to-end telemetry platform for streaming patient vital signs from an edge sensor to clinicians in real time. A DS18B20 thermometer wired to a Raspberry Pi samples once per second over 1-Wire; the Pi POSTs each reading to a Flask ingest server on the same LAN; the server pushes the reading over WebSocket to every connected dashboard — locally and, via Cloudflare Tunnel, to any clinician on the public internet.
 
