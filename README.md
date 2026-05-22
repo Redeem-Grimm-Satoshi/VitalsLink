@@ -347,7 +347,7 @@ What would need to change before this could carry real patient data:
 
 ---
 
-## What I Learnt
+## Lessons Learnt
 
 - **1-Wire is forgiving in the happy path and unforgiving in the unhappy one.** The DS18B20's first line is a CRC byte that has to read `YES` before the reading is trustworthy. Skipping the retry loop in `read_temp_c()` (`pi_publisher.py:60-85`) means occasionally publishing garbage values — which a clinical dashboard will dutifully classify as "Febrile" and alarm on.
 - **I chose Socket.IO over raw WebSockets specifically because of the fallback.** The moment the dashboard leaves the LAN it crosses networks I don't control, and many corporate firewalls don't speak WebSockets. Socket.IO's HTTP long-poll fallback means the page still updates, just slower — versus a bare WS dying silently.
