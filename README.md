@@ -41,7 +41,7 @@ What it is **not** yet: HIPAA-deployable. The [Roadmap](#roadmap--production-har
 ```mermaid
 flowchart LR
     subgraph EDGE["Edge · Raspberry Pi"]
-        S[DS18B20<br/>1-Wire sensor]
+        S["DS18B20<br/>1-Wire sensor"]
         P["pi_publisher.py<br/>1 Hz poller"]
         S -->|w1_slave file| P
     end
@@ -55,8 +55,8 @@ flowchart LR
     end
 
     subgraph CLIENTS["Clients"]
-        D1[Local browser<br/>dashboard.html]
-        D2[Remote browser<br/>via tunnel]
+        D1["Local browser<br/>dashboard.html"]
+        D2["Remote browser<br/>via tunnel"]
     end
 
     P -->|"HTTP POST /api/temperature<br/>JSON, every 1 s"| F
@@ -99,15 +99,15 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph WARD["Hospital LAN (private)"]
-        PI[Raspberry Pi<br/>+ DS18B20]
-        SRV[Laptop<br/>Flask + Socket.IO<br/>:5000]
+        PI["Raspberry Pi<br/>+ DS18B20"]
+        SRV["Laptop<br/>Flask + Socket.IO<br/>:5000"]
         LOCAL[Bedside browser]
         PI -->|LAN, HTTP| SRV
         SRV -->|WS| LOCAL
     end
 
     subgraph EDGE_NET["Cloudflare edge"]
-        TUN[cloudflared<br/>tunnel endpoint]
+        TUN["cloudflared<br/>tunnel endpoint"]
     end
 
     subgraph REMOTE["Remote clinicians"]
@@ -115,7 +115,7 @@ flowchart TB
         R2[Phone · cellular]
     end
 
-    SRV -.->|outbound tunnel<br/>(no inbound port)| TUN
+    SRV -.->|"outbound tunnel<br/>no inbound port"| TUN
     TUN -->|HTTPS + WSS| R1
     TUN -->|HTTPS + WSS| R2
 
