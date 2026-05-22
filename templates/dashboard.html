@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VitalsLink · Axillary Thermometry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #07090c;
+    --bg-2: #0d1117;
+    --panel: #11161d;
+    --panel-2: #161c25;
+    --line: #1f2733;
+    --line-2: #2a3441;
+    --text: #e6edf3;
+    --text-dim: #8b96a5;
+    --text-faint: #4d5867;
+    --ok: #34d399;
+    --ok-glow: rgba(52, 211, 153, 0.35);
+    --warn: #fbbf24;
+    --warn-glow: rgba(251, 191, 36, 0.4);
+    --crit: #f87171;
+    --crit-glow: rgba(248, 113, 113, 0.45);
+    --cyan: #67e8f9;
+    --serif: "Instrument Serif", "Times New Roman", serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+    --sans: "Manrope", -apple-system, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(circle at 15% 10%, rgba(52, 211, 153, 0.06), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(103, 232, 249, 0.05), transparent 45%),
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+    background-position: 0 0, 0 0, -1px -1px, -1px -1px;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(0,0,0,0.25), transparent 30%, transparent 70%, rgba(0,0,0,0.4));
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    position: relative; z-index: 2;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(11, 14, 19, 0.7);
+    backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark {
+    width: 38px; height: 38px;
+    border: 1px solid var(--ok);
+    border-radius: 8px;
+    display: grid; place-items: center;
+    color: var(--ok);
+    font-family: var(--mono); font-weight: 700;
+    box-shadow: 0 0 24px var(--ok-glow), inset 0 0 12px rgba(52, 211, 153, 0.15);
+  }
+  .brand-text .name {
+    font-family: var(--serif);
+    font-size: 26px; font-style: italic;
+    letter-spacing: 0.5px;
+    line-height: 1;
+  }
+  .brand-text .sub {
+    color: var(--text-dim);
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+  .topbar-meta {
+    display: flex; gap: 28px; align-items: center;
+    flex-wrap: wrap;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .topbar-meta b { color: var(--text); font-weight: 500; }
+  .conn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-faint);
+  }
+  .conn.live .dot {
+    background: var(--ok);
+    box-shadow: 0 0 12px var(--ok);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .conn.live { color: var(--ok); border-color: rgba(52, 211, 153, 0.4); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.85); }
+  }
+
+  /* ---------- main grid ---------- */
+  main {
+    position: relative; z-index: 1;
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 20px;
+    padding: 20px 28px 28px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  @media (max-width: 980px) {
+    main {
+      grid-template-columns: 1fr;
+      padding: 16px 16px 20px;
+      gap: 16px;
+    }
+    .chart-wrap { height: 300px; }
+  }
+
+  @media (max-width: 640px) {
+    body {
+      background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+    }
+    .topbar {
+      padding: 12px 16px;
+      gap: 10px;
+    }
+    .brand { gap: 10px; }
+    .brand-mark { width: 34px; height: 34px; }
+    .brand-text .name { font-size: 22px; }
+    .brand-text .sub { font-size: 10px; letter-spacing: 2px; }
+    .topbar-meta {
+      width: 100%;
+      gap: 12px 18px;
+      font-size: 11px;
+      order: 2;
+    }
+    .conn {
+      padding: 5px 10px;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+    main {
+      padding: 12px 12px 20px;
+      gap: 12px;
+    }
+    .panel {
+      padding: 16px;
+      border-radius: 12px;
+    }
+    .panel-title {
+      font-size: 9.5px;
+      letter-spacing: 2px;
+      margin-bottom: 12px;
+    }
+    .pt-meta {
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 14px;
+      margin-top: 16px;
+      padding-top: 14px;
+    }
+    .reading { padding: 8px 0 4px; }
+    .reading .secondary { font-size: 12px; }
+    .status {
+      padding: 12px 14px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .status .value { font-size: 19px; }
+    .stats {
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .stat { padding: 12px 14px; }
+    .stat .v { font-size: 18px; }
+    .chart-wrap { height: 240px; }
+    .chart-legend {
+      gap: 10px 14px;
+      font-size: 9.5px;
+      margin-bottom: 10px;
+    }
+    .ranges { font-size: 12px; }
+    .range-row { padding: 7px 0; }
+    .panel + .panel,
+    section .panel[style*="margin-top"] {
+      margin-top: 12px !important;
+    }
+    footer {
+      padding: 18px 12px;
+      font-size: 9px;
+      letter-spacing: 1.5px;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .topbar-meta { gap: 8px 12px; }
+    .topbar-meta > div:not(.conn) { font-size: 10px; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .chart-wrap { height: 220px; }
+  }
+
+  .panel {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    position: relative;
+  }
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .panel-title::after {
+    content: "";
+    flex: 1; margin-left: 12px;
+    height: 1px; background: var(--line);
+  }
+
+  /* ---------- patient panel ---------- */
+  .pt-name {
+    font-family: var(--serif);
+    font-size: clamp(24px, 5vw, 30px);
+    line-height: 1.15;
+    margin-bottom: 4px;
+  }
+  .pt-id {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+  .pt-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 20px;
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px dashed var(--line-2);
+  }
+  .pt-meta .k {
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--text-faint); margin-bottom: 3px;
+  }
+  .pt-meta .v {
+    font-size: 14px; color: var(--text);
+  }
+
+  /* ---------- big reading panel ---------- */
+  .reading {
+    text-align: center;
+    padding: 18px 0 6px;
+  }
+  .reading .big {
+    font-family: var(--mono);
+    font-size: clamp(72px, 18vw, 124px);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -2px;
+    color: var(--ok);
+    text-shadow: 0 0 40px var(--ok-glow);
+    transition: color 0.4s ease, text-shadow 0.4s ease;
+    font-variant-numeric: tabular-nums;
+    word-break: keep-all;
+  }
+  .reading .big .deg {
+    font-size: clamp(36px, 8vw, 56px);
+    margin-left: 4px;
+    opacity: 0.6;
+  }
+  .reading .big.fade { animation: tick 0.5s ease; }
+  @keyframes tick {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.025); }
+    100% { transform: scale(1); }
+  }
+  .reading .unit-toggle {
+    display: inline-flex;
+    margin-top: 6px;
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+    padding: 3px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+  }
+  .reading .unit-toggle button {
+    background: transparent; border: 0;
+    color: var(--text-dim);
+    padding: 8px 16px;
+    min-height: 32px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: inherit; font-size: inherit; letter-spacing: inherit;
+    touch-action: manipulation;
+  }
+  .reading .unit-toggle button.active {
+    background: var(--line-2);
+    color: var(--text);
+  }
+  .reading .secondary {
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  /* ---------- status banner ---------- */
+  .status {
+    margin: 18px 0 0;
+    padding: 14px 18px;
+    border-radius: 10px;
+    background: rgba(52, 211, 153, 0.08);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    display: flex; align-items: center; gap: 14px;
+    transition: all 0.4s ease;
+  }
+  .status .label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .status .value {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-style: italic;
+    color: var(--ok);
+    margin-left: auto;
+  }
+  .status.warn { background: rgba(251, 191, 36, 0.08); border-color: rgba(251, 191, 36, 0.35); }
+  .status.warn .value { color: var(--warn); }
+  .status.crit {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: rgba(248, 113, 113, 0.45);
+    animation: crit-flash 2s ease-in-out infinite;
+  }
+  .status.crit .value { color: var(--crit); }
+  @keyframes crit-flash {
+    0%, 100% { box-shadow: 0 0 0 rgba(248,113,113,0); }
+    50% { box-shadow: 0 0 30px rgba(248,113,113,0.25); }
+  }
+
+  .reading.warn .big { color: var(--warn); text-shadow: 0 0 40px var(--warn-glow); }
+  .reading.crit .big { color: var(--crit); text-shadow: 0 0 50px var(--crit-glow); }
+
+  /* ---------- chart panel ---------- */
+  .chart-wrap {
+    position: relative;
+    height: 360px;
+  }
+  .chart-legend {
+    display: flex; gap: 18px; flex-wrap: wrap;
+    margin-bottom: 14px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .chart-legend span { display: flex; align-items: center; gap: 6px; }
+  .chart-legend i {
+    display: inline-block; width: 18px; height: 2px;
+  }
+
+  /* ---------- stats row ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .stat {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .stat .k {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .stat .v {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 500;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- ranges card ---------- */
+  .ranges {
+    margin-top: 20px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .range-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--line-2);
+  }
+  .range-row:last-child { border-bottom: 0; }
+  .range-row .pip {
+    width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
+  }
+  .range-row .label { color: var(--text); }
+  .range-row .v {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* ---------- footer ---------- */
+  footer {
+    position: relative; z-index: 1;
+    text-align: center;
+    padding: 24px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .awaiting {
+    color: var(--text-faint) !important;
+    text-shadow: none !important;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">V</div>
+    <div class="brand-text">
+      <div class="name">VitalsLink</div>
+      <div class="sub">Distributed Thermometry</div>
+    </div>
+  </div>
+  <div class="topbar-meta">
+    <div>STATION <b id="station">WARD-A · BAY-03</b></div>
+    <div>UTC <b id="clock">—</b></div>
+    <div class="conn" id="conn"><span class="dot"></span><span id="conn-text">Connecting</span></div>
+  </div>
+</div>
+
+<main>
+  <!-- LEFT column -->
+  <section>
+    <div class="panel">
+      <div class="panel-title">Patient<span></span></div>
+      <div class="pt-name">Redeem Grimm <span style="color:var(--text-dim); font-family:var(--mono); font-size:14px; font-style:normal;">· 34F</span></div>
+      <div class="pt-id" id="pt-id">PT-0427</div>
+      <div class="pt-meta">
+        <div><div class="k">Admit</div><div class="v">11 May 2026</div></div>
+        <div><div class="k">Site</div><div class="v">Axillary</div></div>
+        <div><div class="k">Sensor</div><div class="v" id="sensor-id">DS18B20</div></div>
+        <div><div class="k">Sample</div><div class="v">1 Hz</div></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px;">
+      <div class="panel-title">Reference Ranges (Axillary)<span></span></div>
+      <div class="ranges">
+        <div class="range-row">
+          <span class="pip" style="background:#67e8f9"></span>
+          <span class="label">Hypothermia</span>
+          <span class="v">&lt; 35.0 °C</span>
+        </div>
+        <div class="range-row">
+          <span class="pip" style="background:var(--ok)"></span>
+          <span class="label">Normal</span>
+          <span class="v">35.0 – 37.5 °C</span>
+        </div>
+        <div class="range-row">
+          <span class="pip" style="background:var(--warn)"></span>
+          <span class="label">Low-grade fever</span>
+          <span class="v">37.5 – 38.3 °C</span>
+        </div>
+        <div class="range-row">
+          <span class="pip" style="background:var(--crit)"></span>
+          <span class="label">Febrile</span>
+          <span class="v">&gt; 38.3 °C</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RIGHT column -->
+  <section>
+    <div class="panel">
+      <div class="panel-title">Core Body Temperature<span></span></div>
+
+      <div class="reading" id="reading">
+        <div class="big awaiting" id="big">--.--<span class="deg">°C</span></div>
+        <div class="unit-toggle">
+          <button class="active" data-unit="C">°C</button>
+          <button data-unit="F">°F</button>
+        </div>
+        <div class="secondary" id="secondary">Awaiting sensor stream…</div>
+      </div>
+
+      <div class="status" id="status">
+        <span class="label">Status</span>
+        <span class="value" id="status-value">— STANDBY —</span>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="k">Last reading</div><div class="v" id="s-last">—</div></div>
+        <div class="stat"><div class="k">Min (session)</div><div class="v" id="s-min">—</div></div>
+        <div class="stat"><div class="k">Max (session)</div><div class="v" id="s-max">—</div></div>
+        <div class="stat"><div class="k">Mean</div><div class="v" id="s-mean">—</div></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px;">
+      <div class="panel-title">Trace · live<span></span></div>
+      <div class="chart-legend">
+        <span><i style="background:var(--ok)"></i> Temperature</span>
+        <span><i style="background:var(--warn); height:1px; border-top:1px dashed var(--warn);"></i> Fever threshold (37.5 °C)</span>
+        <span><i style="background:var(--crit); height:1px; border-top:1px dashed var(--crit);"></i> Febrile threshold (38.3 °C)</span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    </div>
+  </section>
+</main>
+
+<footer>VitalsLink · Distributed Temperature Monitoring</footer>
+
+<script>
+  // ---------- clock ----------
+  function updateClock() {
+    const d = new Date();
+    document.getElementById('clock').textContent =
+      d.toUTCString().split(' ')[4];
+  }
+  setInterval(updateClock, 1000); updateClock();
+
+  // ---------- unit toggle ----------
+  let unit = 'C';
+  let lastC = null;
+  document.querySelectorAll('.unit-toggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.unit-toggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      unit = btn.dataset.unit;
+      renderBig();
+    });
+  });
+
+  function cToF(c) { return c * 9/5 + 32; }
+
+  function renderBig() {
+    const el = document.getElementById('big');
+    if (lastC === null) {
+      el.innerHTML = '--.--<span class="deg">°' + unit + '</span>';
+      el.classList.add('awaiting');
+      return;
+    }
+    el.classList.remove('awaiting');
+    const v = unit === 'C' ? lastC : cToF(lastC);
+    el.innerHTML = v.toFixed(2) + '<span class="deg">°' + unit + '</span>';
+  }
+
+  // ---------- status ----------
+  function classify(c) {
+    if (c < 35.0) return { name: 'HYPOTHERMIA',   level: 'crit' };
+    if (c <= 37.5) return { name: 'NORMAL',        level: 'ok'  };
+    if (c <= 38.3) return { name: 'LOW-GRADE FEVER', level: 'warn' };
+    return                  { name: 'FEBRILE',      level: 'crit' };
+  }
+
+  function applyStatus(c) {
+    const s = classify(c);
+    const reading = document.getElementById('reading');
+    const status  = document.getElementById('status');
+    reading.classList.remove('warn', 'crit');
+    status.classList.remove('warn', 'crit');
+    if (s.level === 'warn') { reading.classList.add('warn'); status.classList.add('warn'); }
+    if (s.level === 'crit') { reading.classList.add('crit'); status.classList.add('crit'); }
+    document.getElementById('status-value').textContent = '— ' + s.name + ' —';
+  }
+
+  // ---------- chart ----------
+  const ctx = document.getElementById('chart').getContext('2d');
+  const tempData = { labels: [], values: [] };
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: tempData.labels,
+      datasets: [{
+        label: 'Temperature (°C)',
+        data: tempData.values,
+        borderColor: '#34d399',
+        backgroundColor: (c) => {
+          const {ctx, chartArea} = c.chart;
+          if (!chartArea) return 'rgba(52,211,153,0.1)';
+          const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          g.addColorStop(0, 'rgba(52,211,153,0.35)');
+          g.addColorStop(1, 'rgba(52,211,153,0)');
+          return g;
+        },
+        borderWidth: 2,
+        tension: 0.35,
+        fill: true,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 200 },
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0d1117',
+          borderColor: '#2a3441',
+          borderWidth: 1,
+          titleFont: { family: 'JetBrains Mono', size: 11 },
+          bodyFont:  { family: 'JetBrains Mono', size: 12 },
+          padding: 10,
+        },
+        annotation: {}
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)', drawTicks: false },
+          ticks: {
+            color: '#4d5867',
+            font: { family: 'JetBrains Mono', size: 10 },
+            maxRotation: 0, autoSkipPadding: 24,
+          },
+          border: { color: '#1f2733' },
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: {
+            color: '#4d5867',
+            font: { family: 'JetBrains Mono', size: 10 },
+            callback: (v) => v.toFixed(1) + '°',
+          },
+          border: { color: '#1f2733' },
+          suggestedMin: 34, suggestedMax: 39,
+        }
+      }
+    },
+    plugins: [{
+      id: 'threshold-lines',
+      afterDraw(c) {
+        const { ctx, chartArea: a, scales: { y } } = c;
+        if (!a) return;
+        const draw = (val, color) => {
+          const py = y.getPixelForValue(val);
+          if (py < a.top || py > a.bottom) return;
+          ctx.save();
+          ctx.setLineDash([4, 6]);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(a.left, py); ctx.lineTo(a.right, py);
+          ctx.stroke();
+          ctx.restore();
+        };
+        draw(37.5, '#fbbf24');
+        draw(38.3, '#f87171');
+      }
+    }]
+  });
+
+  // ---------- stats ----------
+  let allReadings = [];
+  function updateStats() {
+    if (!allReadings.length) return;
+    const last = allReadings[allReadings.length - 1];
+    const vals = allReadings.map(r => r.c);
+    const min  = Math.min(...vals);
+    const max  = Math.max(...vals);
+    const mean = vals.reduce((a,b)=>a+b,0) / vals.length;
+    document.getElementById('s-last').textContent = last.c.toFixed(2) + '°';
+    document.getElementById('s-min').textContent  = min.toFixed(2) + '°';
+    document.getElementById('s-max').textContent  = max.toFixed(2) + '°';
+    document.getElementById('s-mean').textContent = mean.toFixed(2) + '°';
+  }
+
+  function pushReading(c, timeStr) {
+    allReadings.push({ c, t: timeStr });
+    if (allReadings.length > 300) allReadings.shift();
+    tempData.labels.push(timeStr);
+    tempData.values.push(c);
+    if (tempData.labels.length > 120) {
+      tempData.labels.shift();
+      tempData.values.shift();
+    }
+    chart.update('none');
+    updateStats();
+  }
+
+  // ---------- socket.io ----------
+  const conn = document.getElementById('conn');
+  const connText = document.getElementById('conn-text');
+  const socket = io();
+
+  socket.on('connect', () => {
+    conn.classList.add('live');
+    connText.textContent = 'Live';
+  });
+  socket.on('disconnect', () => {
+    conn.classList.remove('live');
+    connText.textContent = 'Disconnected';
+  });
+
+  socket.on('temperature_update', (msg) => {
+    lastC = msg.temperature_c;
+    document.getElementById('pt-id').textContent = msg.patient_id || 'PT-0427';
+    document.getElementById('sensor-id').textContent = msg.sensor_id || 'DS18B20';
+    document.getElementById('secondary').textContent =
+      `Updated ${msg.time_str}  ·  ${msg.temperature_f.toFixed(2)} °F`;
+    renderBig();
+    const big = document.getElementById('big');
+    big.classList.remove('fade');
+    void big.offsetWidth;       // restart animation
+    big.classList.add('fade');
+    applyStatus(lastC);
+    pushReading(lastC, msg.time_str);
+  });
+
+  // Backfill on page load (so the chart isn't empty for late joiners)
+  fetch('/api/history').then(r => r.json()).then(rows => {
+    rows.forEach(msg => {
+      lastC = msg.temperature_c;
+      pushReading(msg.temperature_c, msg.time_str);
+    });
+    if (lastC !== null) { renderBig(); applyStatus(lastC); }
+  });
+</script>
+</body>
+</html>
