@@ -1,3 +1,4 @@
+
 # VitalsLink
 
 **Real-time vital-signs streaming platform - edge sensor to any browser, anywhere.**
@@ -8,6 +9,8 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 ---
+
+<img width="1919" height="1079" alt="Screenshot 2026-05-21 231814" src="https://github.com/user-attachments/assets/8c4da00a-8d42-441d-be6e-a37cc04f88cc" />
 
 ## Intro
 
