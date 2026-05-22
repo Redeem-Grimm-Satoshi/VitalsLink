@@ -1,6 +1,6 @@
 # VitalsLink
 
-**Real-time vital-signs streaming platform — edge sensor to any browser, anywhere.**
+**Real-time vital-signs streaming platform - edge sensor to any browser, anywhere.**
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.x-000000?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
